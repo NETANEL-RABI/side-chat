@@ -20,9 +20,9 @@ async function rawFetch(path, options = {}, token) {
   const headers = {
     apikey: SUPABASE_KEY,
     "Content-Type": "application/json",
-    Authorization: "Bearer " + (token || SUPABASE_KEY),
     ...(options.headers || {}),
   };
+  if (token) headers.Authorization = "Bearer " + token;
   return fetch(SUPABASE_URL + path, { ...options, headers });
 }
 
@@ -69,7 +69,7 @@ async function signup() {
     });
     const d = await r.json();
     if (!r.ok) {
-      const m = d.msg || d.error_description || "";
+      const m = d.msg || d.error_description || d.message || "";
       throw new Error(/already/i.test(m) ? "שם המשתמש תפוס" : (m || "ההרשמה נכשלה"));
     }
     await login();
