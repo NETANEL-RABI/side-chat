@@ -1,0 +1,20 @@
+* { box-sizing: border-box; font-family: Arial, sans-serif; }
+html, body { margin: 0; height: 100%; background: #fff; color: #222; }
+.view { display: flex; flex-direction: column; height: 100%; padding: 12px; gap: 8px; }
+.hidden { display: none !important; }
+h2 { margin: 8px 0; text-align: center; }
+input { padding: 10px; border: 1px solid #ccc; border-radius: 8px; font-size: 14px; width: 100%; }
+button { padding: 10px; border: 0; border-radius: 8px; background: #2f6fed; color: #fff; cursor: pointer; font-size: 14px; }
+button.secondary { background: #e6e9f0; color: #222; }
+button.link { background: none; color: #2f6fed; padding: 4px; }
+header { display: flex; justify-content: space-between; align-items: center; }
+.msg { color: #c0392b; font-size: 13px; min-height: 18px; margin: 0; }
+#contacts { list-style: none; margin: 0; padding: 0; overflow-y: auto; flex: 1; }
+#contacts li { padding: 10px; border-bottom: 1px solid #eee; cursor: pointer; }
+#contacts li:hover { background: #f3f6ff; }
+#messages { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 6px; padding: 4px; }
+.bubble { max-width: 80%; padding: 8px 10px; border-radius: 12px; font-size: 14px; word-wrap: break-word; white-space: pre-wrap; }
+.bubble.me { align-self: flex-start; background: #2f6fed; color: #fff; }
+.bubble.them { align-self: flex-end; background: #eef0f5; }
+.composer { display: flex; gap: 6px; }
+.composer input { flex: 1; }
