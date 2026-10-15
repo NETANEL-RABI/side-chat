@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+  <meta charset="UTF-8">
+  <link rel="stylesheet" href="chat.css">
+</head>
+<body>
+
+  <section id="view-auth" class="view">
+    <h2>צ'אט</h2>
+    <input id="auth-user" placeholder="שם משתמש (אנגלית)" autocomplete="username">
+    <input id="auth-pass" type="password" placeholder="סיסמה (לפחות 6 תווים)" autocomplete="current-password">
+    <button id="btn-login">התחברות</button>
+    <button id="btn-signup" class="secondary">הרשמה</button>
+    <p id="auth-msg" class="msg"></p>
+  </section>
+
+  <section id="view-contacts" class="view hidden">
+    <header>
+      <span id="me-name"></span>
+      <button id="btn-logout" class="link">התנתקות</button>
+    </header>
+    <input id="search" placeholder="חיפוש משתמש לפי שם...">
+    <ul id="contacts"></ul>
+  </section>
+
+  <section id="view-chat" class="view hidden">
+    <header>
+      <button id="btn-back" class="link">→ חזרה</button>
+      <strong id="chat-with"></strong>
+    </header>
+    <div id="messages"></div>
+    <div class="composer">
+      <input id="msg-input" placeholder="כתוב הודעה..." maxlength="1000">
+      <button id="btn-send">שלח</button>
+    </div>
+  </section>
+
+  <script src="config.js"></script>
+  <script src="chat.js"></script>
+</body>
+</html>
