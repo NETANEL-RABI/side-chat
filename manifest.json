@@ -1,0 +1,16 @@
+{
+  "manifest_version": 3,
+  "name": "צ'אט צד",
+  "version": "1.0.0",
+  "description": "צ'אט קטן בצד שמאל של הדפדפן",
+  "host_permissions": ["https://*.supabase.co/*"],
+  "content_scripts": [
+    { "matches": ["<all_urls>"], "js": ["content.js"], "run_at": "document_idle" }
+  ],
+  "web_accessible_resources": [
+    { "resources": ["chat.html"], "matches": ["<all_urls>"] }
+  ],
+  "browser_specific_settings": {
+    "gecko": { "id": "side-chat@CHANGE-ME.example" }
+  }
+}
