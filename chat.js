@@ -1,7 +1,7 @@
 (function () {
   const SUPABASE_URL = "https://cazrzfqmnrdlfzqsoycu.supabase.co";
   const SUPABASE_KEY = "sb_publishable_nKyN0JhaSmiQ5NRYOX3afA_ptTDNMms";
-  const FAKE_DOMAIN = "@gmail.com";
+  const FAKE_DOMAIN = "@mailinator.com";
   const $ = (id) => document.getElementById(id);
 
   let session = JSON.parse(localStorage.getItem("session") || "null");
