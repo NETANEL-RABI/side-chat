@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>צ'אט</title>
+  <link rel="stylesheet" href="chat.css">
+  <style>
+    body { background: #e9ecf3; display: flex; justify-content: center; }
+    #app { width: 100%; max-width: 440px; height: 100vh; background: #fff; }
+    @media (min-width: 600px) {
+      #app { height: 92vh; margin-top: 4vh; border-radius: 14px; box-shadow: 0 6px 24px rgba(0,0,0,.15); overflow: hidden; }
+    }
+  </style>
+</head>
+<body>
+  <main id="app">
+
+    <section id="view-auth" class="view">
+      <h2>צ'אט</h2>
+      <input id="auth-user" placeholder="שם משתמש (אנגלית)" autocomplete="username">
+      <input id="auth-pass" type="password" placeholder="סיסמה (לפחות 6 תווים)" autocomplete="current-password">
+      <button id="btn-login">התחברות</button>
+      <button id="btn-signup" class="secondary">הרשמה</button>
+      <p id="auth-msg" class="msg"></p>
+    </section>
+
+    <section id="view-contacts" class="view hidden">
+      <header>
+        <span id="me-name"></span>
+        <button id="btn-logout" class="link">התנתקות</button>
+      </header>
+      <input id="search" placeholder="חיפוש משתמש לפי שם...">
+      <ul id="contacts"></ul>
+    </section>
+
+    <section id="view-chat" class="view hidden">
+      <header>
+        <button id="btn-back" class="link">→ חזרה</button>
+        <strong id="chat-with"></strong>
+      </header>
+      <div id="messages"></div>
+      <div class="composer">
+        <input id="msg-input" placeholder="כתוב הודעה..." maxlength="1000">
+        <button id="btn-send">שלח</button>
+      </div>
+    </section>
+
+  </main>
+  <script src="chat.js"></script>
+</body>
+</html>
