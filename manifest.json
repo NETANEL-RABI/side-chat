@@ -3,6 +3,7 @@
   "name": "צ'אט צד",
   "version": "1.0.0",
   "description": "צ'אט קטן בצד שמאל של הדפדפן",
+  "icons": { "48": "icon.svg", "96": "icon.svg", "128": "icon.svg" },
   "host_permissions": ["https://*.supabase.co/*"],
   "content_scripts": [
     { "matches": ["<all_urls>"], "js": ["content.js"], "run_at": "document_idle" }
@@ -11,6 +12,12 @@
     { "resources": ["chat.html"], "matches": ["<all_urls>"] }
   ],
   "browser_specific_settings": {
-    "gecko": { "id": "side-chat@CHANGE-ME.example" }
+    "gecko": {
+      "id": "side-chat@netanelrabi.example",
+      "strict_min_version": "140.0",
+      "data_collection_permissions": {
+        "required": ["authenticationInfo", "personalCommunications"]
+      }
+    }
   }
 }
