@@ -10,6 +10,9 @@
   let pollTimer = null;
   let aiBusy = false;
   let clearBtn = null;
+  let lastMsgs = [];
+  let selectedId = null;
+  let editingId = null;
 
   function show(viewId) {
     ["view-auth", "view-contacts", "view-chat"].forEach((v) =>
@@ -230,6 +233,9 @@
     $("messages").innerHTML = "";
     delete $("messages").dataset.init;
     clearInterval(pollTimer);
+    lastMsgs = [];
+    selectedId = null;
+    editingId = null;
     show("view-chat");
     if (user.id === "ai") {
       clearBtn.classList.remove("hidden");
@@ -242,18 +248,107 @@
     $("msg-input").focus();
   }
 
+  function smallBtn(text, onclick) {
+    const b = document.createElement("button");
+    b.textContent = text;
+    b.style.cssText =
+      "background:rgba(255,255,255,.25);color:#fff;border:0;border-radius:6px;" +
+      "padding:3px 8px;font-size:12px;cursor:pointer;margin-inline-end:6px;";
+    b.onclick = (e) => { e.stopPropagation(); onclick(); };
+    return b;
+  }
+
+  function renderMessages() {
+    const me = session.user_id;
+    const box = $("messages");
+    const atBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 40;
+    box.innerHTML = "";
+    lastMsgs.forEach((m) => {
+      const mine = m.sender_id === me;
+      const div = document.createElement("div");
+      div.className = "bubble " + (mine ? "me" : "them");
+
+      if (editingId === m.id) {
+        const input = document.createElement("input");
+        input.value = m.content;
+        input.maxLength = 1000;
+        input.style.cssText = "width:100%;padding:6px;border-radius:6px;border:0;color:#222;margin-bottom:6px;";
+        input.onkeydown = (e) => {
+          if (e.key === "Enter") saveEdit(m.id, input.value);
+          if (e.key === "Escape") { editingId = null; renderMessages(); }
+        };
+        input.onclick = (e) => e.stopPropagation();
+        div.appendChild(input);
+        const row = document.createElement("div");
+        row.appendChild(smallBtn("שמור", () => saveEdit(m.id, input.value)));
+        row.appendChild(smallBtn("ביטול", () => { editingId = null; renderMessages(); }));
+        div.appendChild(row);
+        setTimeout(() => input.focus(), 0);
+      } else {
+        const t = document.createElement("span");
+        t.textContent = m.content;
+        div.appendChild(t);
+        if (m.edited_at) {
+          const e = document.createElement("span");
+          e.textContent = " (נערכה)";
+          e.style.cssText = "font-size:11px;opacity:.7;";
+          div.appendChild(e);
+        }
+        if (mine) {
+          div.style.cursor = "pointer";
+          div.onclick = () => {
+            selectedId = selectedId === m.id ? null : m.id;
+            renderMessages();
+          };
+          if (selectedId === m.id) {
+            const row = document.createElement("div");
+            row.style.marginTop = "6px";
+            row.appendChild(smallBtn("✏️ ערוך", () => { editingId = m.id; renderMessages(); }));
+            row.appendChild(smallBtn("🗑 מחק", () => deleteMsg(m.id)));
+            div.appendChild(row);
+          }
+        }
+      }
+      box.appendChild(div);
+    });
+    if (atBottom || !box.dataset.init) { box.scrollTop = box.scrollHeight; box.dataset.init = "1"; }
+  }
+
   async function loadMessages() {
     if (!currentChat || currentChat.id === "ai") return;
     const me = session.user_id, other = currentChat.id;
     const filter = `or=(and(sender_id.eq.${me},receiver_id.eq.${other}),and(sender_id.eq.${other},receiver_id.eq.${me}))`;
-    const r = await db(`/rest/v1/messages?select=id,sender_id,content&${filter}&order=created_at.asc&limit=200`);
+    const r = await db(`/rest/v1/messages?select=id,sender_id,content,edited_at&${filter}&order=created_at.asc&limit=200`);
     if (!r.ok) return;
-    const msgs = await r.json();
-    const box = $("messages");
-    const atBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 40;
-    box.innerHTML = "";
-    msgs.forEach((m) => addBubble(m.content, m.sender_id === me ? "me" : "them"));
-    if (atBottom || !box.dataset.init) { box.scrollTop = box.scrollHeight; box.dataset.init = "1"; }
+    lastMsgs = await r.json();
+    if (editingId !== null) return;   // לא מרעננים בזמן עריכה
+    renderMessages();
+  }
+
+  async function saveEdit(id, text) {
+    text = text.trim();
+    const old = lastMsgs.find((m) => m.id === id);
+    editingId = null;
+    selectedId = null;
+    if (!text || (old && old.content === text)) { renderMessages(); return; }
+    const r = await db(`/rest/v1/messages?id=eq.${id}`, {
+      method: "PATCH",
+      headers: { Prefer: "return=minimal" },
+      body: JSON.stringify({ content: text, edited_at: new Date().toISOString() }),
+    });
+    if (!r.ok) alert("העריכה נכשלה");
+    await loadMessages();
+  }
+
+  async function deleteMsg(id) {
+    if (!confirm("למחוק את ההודעה?")) return;
+    selectedId = null;
+    const r = await db(`/rest/v1/messages?id=eq.${id}`, {
+      method: "DELETE",
+      headers: { Prefer: "return=minimal" },
+    });
+    if (!r.ok) alert("המחיקה נכשלה");
+    await loadMessages();
   }
 
   async function sendMessage() {
@@ -285,16 +380,3 @@
     }
   };
   $("chat-with").parentElement.appendChild(clearBtn);
-
-  $("btn-login").onclick = login;
-  $("btn-signup").onclick = signup;
-  $("btn-logout").onclick = logout;
-  $("btn-back").onclick = openContacts;
-  $("btn-send").onclick = sendMessage;
-  $("msg-input").onkeydown = (e) => { if (e.key === "Enter") sendMessage(); };
-  $("auth-pass").onkeydown = (e) => { if (e.key === "Enter") login(); };
-  let searchDelay;
-  $("search").oninput = () => { clearTimeout(searchDelay); searchDelay = setTimeout(searchUsers, 300); };
-
-  if (session) openContacts(); else show("view-auth");
-})();
