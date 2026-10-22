@@ -12,6 +12,8 @@
   let aiBusy = false;
   let clearBtn = null;
   let attachBtn = null;
+  let schedBtn = null;
+  let schedPanel = null;
   let fileInput = null;
   let uploadNote = null;
   let lastMsgs = [];
@@ -264,8 +266,8 @@
   // כיווץ תמונות לפני העלאה (חוסך מקום בשרת)
   async function compressImage(file) {
     if (!file.type.startsWith("image/")) return file;
-    if (/gif|svg/.test(file.type)) return file;       // לא מכווצים GIF ו-SVG
-    if (file.size < 300 * 1024) return file;          // קטנה מספיק
+    if (/gif|svg/.test(file.type)) return file;
+    if (file.size < 300 * 1024) return file;
     try {
       const bmp = await createImageBitmap(file);
       const MAXD = 1600;
@@ -276,7 +278,7 @@
       canvas.width = w;
       canvas.height = h;
       const ctx = canvas.getContext("2d");
-      ctx.fillStyle = "#fff";                         // רקע לבן לתמונות שקופות
+      ctx.fillStyle = "#fff";
       ctx.fillRect(0, 0, w, h);
       ctx.drawImage(bmp, 0, 0, w, h);
       if (bmp.close) bmp.close();
@@ -322,6 +324,89 @@
     } catch (e) { setNote(e.message); }
   }
 
+  // ---------- הודעות מתוזמנות ----------
+  function fmtDate(iso) {
+    return new Date(iso).toLocaleString("he-IL", { dateStyle: "short", timeStyle: "short" });
+  }
+
+  function localInputValue(d) {
+    const p = (n) => String(n).padStart(2, "0");
+    return d.getFullYear() + "-" + p(d.getMonth() + 1) + "-" + p(d.getDate()) +
+      "T" + p(d.getHours()) + ":" + p(d.getMinutes());
+  }
+
+  function schedMsg(text, ok) {
+    const n = $("sched-note");
+    n.textContent = text || "";
+    n.style.color = ok ? "#1e8449" : "#c0392b";
+  }
+
+  async function loadScheduled() {
+    if (!currentChat || currentChat.id === "ai") return;
+    const list = $("sched-list");
+    const r = await db(
+      `/rest/v1/scheduled_messages?select=id,content,send_at&receiver_id=eq.${currentChat.id}&order=send_at.asc`
+    );
+    if (!r.ok) { list.textContent = ""; return; }
+    const items = await r.json();
+    list.innerHTML = "";
+    if (items.length) {
+      const h = document.createElement("div");
+      h.textContent = "ממתינות לשליחה:";
+      h.style.cssText = "font-weight:bold;margin-bottom:4px;";
+      list.appendChild(h);
+    }
+    items.forEach((it) => {
+      const row = document.createElement("div");
+      row.style.cssText =
+        "display:flex;justify-content:space-between;gap:6px;align-items:center;" +
+        "border-top:1px solid #dde;padding:4px 0;";
+      const t = document.createElement("span");
+      t.textContent = "🕐 " + fmtDate(it.send_at) + " — " + it.content;
+      t.style.cssText = "word-break:break-word;min-width:0;";
+      const x = document.createElement("button");
+      x.textContent = "ביטול";
+      x.style.cssText = "padding:3px 8px;font-size:12px;background:#c0392b;flex-shrink:0;";
+      x.onclick = async () => {
+        await db(`/rest/v1/scheduled_messages?id=eq.${it.id}`, {
+          method: "DELETE",
+          headers: { Prefer: "return=minimal" },
+        });
+        loadScheduled();
+      };
+      row.appendChild(t);
+      row.appendChild(x);
+      list.appendChild(row);
+    });
+  }
+
+  async function scheduleMessage() {
+    if (!currentChat || currentChat.id === "ai") return;
+    const content = $("msg-input").value.trim();
+    const val = $("sched-time").value;
+    if (!content) { schedMsg("כתוב קודם את ההודעה בשדה ההודעה", false); return; }
+    if (!val) { schedMsg("בחר תאריך ושעה", false); return; }
+    const when = new Date(val);
+    if (isNaN(when.getTime()) || when.getTime() < Date.now() + 30000) {
+      schedMsg("בחר זמן עתידי", false);
+      return;
+    }
+    const r = await db("/rest/v1/scheduled_messages", {
+      method: "POST",
+      headers: { Prefer: "return=minimal" },
+      body: JSON.stringify({
+        sender_id: session.user_id,
+        receiver_id: currentChat.id,
+        content,
+        send_at: when.toISOString(),
+      }),
+    });
+    if (!r.ok) { schedMsg("התזמון נכשל", false); return; }
+    $("msg-input").value = "";
+    schedMsg("✓ ההודעה תישלח ב-" + fmtDate(when.toISOString()), true);
+    loadScheduled();
+  }
+
   // ---------- שיחה ----------
   function openChat(user) {
     currentChat = user;
@@ -334,14 +419,17 @@
     selectedId = null;
     editingId = null;
     setNote("");
+    schedPanel.style.display = "none";
     show("view-chat");
     if (user.id === "ai") {
       clearBtn.classList.remove("hidden");
       attachBtn.style.display = "none";
+      schedBtn.style.display = "none";
       renderAI(aiBusy);
     } else {
       clearBtn.classList.add("hidden");
       attachBtn.style.display = "";
+      schedBtn.style.display = "";
       loadMessages();
       pollTimer = setInterval(loadMessages, 3000);
     }
@@ -470,7 +558,7 @@
     if (sig === lastSig) return;
     lastSig = sig;
     lastMsgs = msgs;
-    if (editingId !== null) return;   // לא מרעננים בזמן עריכה
+    if (editingId !== null) return;
     renderMessages();
   }
 
@@ -541,12 +629,48 @@
   uploadNote.style.cssText = "color:#c0392b;font-size:13px;min-height:0;";
   composer.parentElement.insertBefore(uploadNote, composer);
 
+  schedPanel = document.createElement("div");
+  schedPanel.style.cssText =
+    "display:none;background:#f3f6ff;border-radius:8px;padding:8px;font-size:13px;" +
+    "max-height:170px;overflow-y:auto;";
+  schedPanel.innerHTML =
+    '<div style="margin-bottom:6px;font-weight:bold">⏰ שליחת ההודעה שבשדה במועד מאוחר יותר</div>' +
+    '<input type="datetime-local" id="sched-time" style="margin-bottom:6px">' +
+    '<div style="display:flex;gap:6px">' +
+    '<button id="sched-ok">תזמן</button>' +
+    '<button id="sched-close" class="secondary">סגור</button>' +
+    "</div>" +
+    '<div id="sched-note" style="font-size:12px;margin-top:4px"></div>' +
+    '<div id="sched-list" style="margin-top:8px"></div>';
+  composer.parentElement.insertBefore(schedPanel, composer);
+
   attachBtn = document.createElement("button");
   attachBtn.textContent = "📎";
   attachBtn.title = "צירוף קובץ או תמונה";
   attachBtn.style.cssText =
     "background:#e6e9f0;color:#222;padding:8px 10px;font-size:16px;border:0;border-radius:8px;cursor:pointer;";
   composer.insertBefore(attachBtn, $("msg-input"));
+
+  schedBtn = document.createElement("button");
+  schedBtn.textContent = "⏰";
+  schedBtn.title = "הודעה מתוזמנת";
+  schedBtn.style.cssText =
+    "background:#e6e9f0;color:#222;padding:8px 10px;font-size:16px;border:0;border-radius:8px;cursor:pointer;";
+  composer.insertBefore(schedBtn, $("msg-input"));
+
+  schedBtn.onclick = () => {
+    const open = schedPanel.style.display === "none";
+    schedPanel.style.display = open ? "block" : "none";
+    if (open) {
+      const now = new Date();
+      $("sched-time").min = localInputValue(now);
+      if (!$("sched-time").value) $("sched-time").value = localInputValue(new Date(now.getTime() + 3600000));
+      schedMsg("", true);
+      loadScheduled();
+    }
+  };
+  $("sched-ok").onclick = scheduleMessage;
+  $("sched-close").onclick = () => { schedPanel.style.display = "none"; };
 
   fileInput = document.createElement("input");
   fileInput.type = "file";
