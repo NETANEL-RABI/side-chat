@@ -3,6 +3,7 @@
   const SUPABASE_KEY = "sb_publishable_nKyN0JhaSmiQ5NRYOX3afA_ptTDNMms";
   const FAKE_DOMAIN = "@mailinator.com";
   const AI_USER = { id: "ai", username: "🤖 עוזר AI" };
+  const MAX_FILE = 10 * 1024 * 1024;
   const $ = (id) => document.getElementById(id);
 
   let session = JSON.parse(localStorage.getItem("session") || "null");
@@ -10,9 +11,14 @@
   let pollTimer = null;
   let aiBusy = false;
   let clearBtn = null;
+  let attachBtn = null;
+  let fileInput = null;
+  let uploadNote = null;
   let lastMsgs = [];
+  let lastSig = "";
   let selectedId = null;
   let editingId = null;
+  const blobCache = {};
 
   function show(viewId) {
     ["view-auth", "view-contacts", "view-chat"].forEach((v) =>
@@ -226,6 +232,69 @@
     if (currentChat && currentChat.id === "ai") renderAI(false, err);
   }
 
+  // ---------- קבצים ----------
+  function getBlobUrl(path) {
+    if (!blobCache[path]) {
+      blobCache[path] = db(`/storage/v1/object/authenticated/chat-files/${path}`)
+        .then(async (r) => {
+          if (!r.ok) throw new Error("download failed");
+          return URL.createObjectURL(await r.blob());
+        })
+        .catch((e) => { delete blobCache[path]; throw e; });
+    }
+    return blobCache[path];
+  }
+
+  async function downloadFile(path, name) {
+    try {
+      const url = await getBlobUrl(path);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = name;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+    } catch (e) { alert("ההורדה נכשלה"); }
+  }
+
+  function setNote(text) {
+    if (uploadNote) uploadNote.textContent = text || "";
+  }
+
+  async function sendFile(file) {
+    if (!file || !currentChat || currentChat.id === "ai") return;
+    if (file.size > MAX_FILE) { setNote("הקובץ גדול מדי (מקסימום 10MB)"); return; }
+    setNote("מעלה קובץ...");
+    const extMatch = file.name.match(/\.[A-Za-z0-9]{1,8}$/);
+    const ext = extMatch ? extMatch[0] : "";
+    const path = `${session.user_id}/${Date.now()}_${Math.random().toString(36).slice(2, 8)}${ext}`;
+    try {
+      const up = await db(`/storage/v1/object/chat-files/${path}`, {
+        method: "POST",
+        headers: { "Content-Type": file.type || "application/octet-stream" },
+        body: file,
+      });
+      if (!up.ok) throw new Error("ההעלאה נכשלה");
+      const r = await db("/rest/v1/messages", {
+        method: "POST",
+        headers: { Prefer: "return=minimal" },
+        body: JSON.stringify({
+          sender_id: session.user_id,
+          receiver_id: currentChat.id,
+          content: file.name.slice(0, 200),
+          file_path: path,
+          file_type: file.type || "application/octet-stream",
+        }),
+      });
+      if (!r.ok) {
+        await db(`/storage/v1/object/chat-files/${path}`, { method: "DELETE" });
+        throw new Error("שליחת ההודעה נכשלה");
+      }
+      setNote("");
+      loadMessages();
+    } catch (e) { setNote(e.message); }
+  }
+
   // ---------- שיחה ----------
   function openChat(user) {
     currentChat = user;
@@ -234,14 +303,18 @@
     delete $("messages").dataset.init;
     clearInterval(pollTimer);
     lastMsgs = [];
+    lastSig = "";
     selectedId = null;
     editingId = null;
+    setNote("");
     show("view-chat");
     if (user.id === "ai") {
       clearBtn.classList.remove("hidden");
+      attachBtn.style.display = "none";
       renderAI(aiBusy);
     } else {
       clearBtn.classList.add("hidden");
+      attachBtn.style.display = "";
       loadMessages();
       pollTimer = setInterval(loadMessages, 3000);
     }
@@ -252,10 +325,48 @@
     const b = document.createElement("button");
     b.textContent = text;
     b.style.cssText =
-      "background:rgba(255,255,255,.25);color:#fff;border:0;border-radius:6px;" +
+      "background:rgba(0,0,0,.18);color:inherit;border:0;border-radius:6px;" +
       "padding:3px 8px;font-size:12px;cursor:pointer;margin-inline-end:6px;";
     b.onclick = (e) => { e.stopPropagation(); onclick(); };
     return b;
+  }
+
+  function fileNode(m) {
+    const wrap = document.createElement("div");
+    const isImg = (m.file_type || "").startsWith("image/");
+    if (isImg) {
+      const img = document.createElement("img");
+      img.alt = m.content;
+      img.style.cssText =
+        "max-width:200px;max-height:240px;border-radius:8px;display:block;" +
+        "background:rgba(0,0,0,.08);min-width:60px;min-height:40px;cursor:zoom-in;";
+      getBlobUrl(m.file_path)
+        .then((u) => { img.src = u; })
+        .catch(() => { img.replaceWith(document.createTextNode("⚠️ לא ניתן לטעון את התמונה")); });
+      img.onclick = (e) => {
+        e.stopPropagation();
+        const big = img.dataset.big === "1";
+        img.dataset.big = big ? "0" : "1";
+        img.style.maxWidth = big ? "200px" : "100%";
+        img.style.maxHeight = big ? "240px" : "none";
+        img.style.cursor = big ? "zoom-in" : "zoom-out";
+      };
+      wrap.appendChild(img);
+      const cap = document.createElement("div");
+      cap.textContent = m.content;
+      cap.style.cssText = "font-size:11px;opacity:.7;margin-top:2px;word-break:break-all;";
+      wrap.appendChild(cap);
+    } else {
+      const t = document.createElement("span");
+      t.textContent = "📎 " + m.content;
+      t.style.wordBreak = "break-all";
+      wrap.appendChild(t);
+    }
+    const row = document.createElement("div");
+    row.style.marginTop = "6px";
+    row.appendChild(smallBtn("⬇ הורד", () => downloadFile(m.file_path, m.content)));
+    wrap.appendChild(row);
+    return wrap;
   }
 
   function renderMessages() {
@@ -265,10 +376,11 @@
     box.innerHTML = "";
     lastMsgs.forEach((m) => {
       const mine = m.sender_id === me;
+      const isFile = !!m.file_path;
       const div = document.createElement("div");
       div.className = "bubble " + (mine ? "me" : "them");
 
-      if (editingId === m.id) {
+      if (editingId === m.id && !isFile) {
         const input = document.createElement("input");
         input.value = m.content;
         input.maxLength = 1000;
@@ -285,14 +397,18 @@
         div.appendChild(row);
         setTimeout(() => input.focus(), 0);
       } else {
-        const t = document.createElement("span");
-        t.textContent = m.content;
-        div.appendChild(t);
-        if (m.edited_at) {
-          const e = document.createElement("span");
-          e.textContent = " (נערכה)";
-          e.style.cssText = "font-size:11px;opacity:.7;";
-          div.appendChild(e);
+        if (isFile) {
+          div.appendChild(fileNode(m));
+        } else {
+          const t = document.createElement("span");
+          t.textContent = m.content;
+          div.appendChild(t);
+          if (m.edited_at) {
+            const e = document.createElement("span");
+            e.textContent = " (נערכה)";
+            e.style.cssText = "font-size:11px;opacity:.7;";
+            div.appendChild(e);
+          }
         }
         if (mine) {
           div.style.cursor = "pointer";
@@ -303,7 +419,9 @@
           if (selectedId === m.id) {
             const row = document.createElement("div");
             row.style.marginTop = "6px";
-            row.appendChild(smallBtn("✏️ ערוך", () => { editingId = m.id; renderMessages(); }));
+            if (!isFile) {
+              row.appendChild(smallBtn("✏️ ערוך", () => { editingId = m.id; renderMessages(); }));
+            }
             row.appendChild(smallBtn("🗑 מחק", () => deleteMsg(m.id)));
             div.appendChild(row);
           }
@@ -318,9 +436,13 @@
     if (!currentChat || currentChat.id === "ai") return;
     const me = session.user_id, other = currentChat.id;
     const filter = `or=(and(sender_id.eq.${me},receiver_id.eq.${other}),and(sender_id.eq.${other},receiver_id.eq.${me}))`;
-    const r = await db(`/rest/v1/messages?select=id,sender_id,content,edited_at&${filter}&order=created_at.asc&limit=200`);
+    const r = await db(`/rest/v1/messages?select=id,sender_id,content,edited_at,file_path,file_type&${filter}&order=created_at.asc&limit=200`);
     if (!r.ok) return;
-    lastMsgs = await r.json();
+    const msgs = await r.json();
+    const sig = JSON.stringify(msgs);
+    if (sig === lastSig) return;
+    lastSig = sig;
+    lastMsgs = msgs;
     if (editingId !== null) return;   // לא מרעננים בזמן עריכה
     renderMessages();
   }
@@ -343,11 +465,16 @@
   async function deleteMsg(id) {
     if (!confirm("למחוק את ההודעה?")) return;
     selectedId = null;
+    const old = lastMsgs.find((m) => m.id === id);
     const r = await db(`/rest/v1/messages?id=eq.${id}`, {
       method: "DELETE",
       headers: { Prefer: "return=minimal" },
     });
-    if (!r.ok) alert("המחיקה נכשלה");
+    if (!r.ok) { alert("המחיקה נכשלה"); return; }
+    if (old && old.file_path) {
+      db(`/storage/v1/object/chat-files/${old.file_path}`, { method: "DELETE" }).catch(() => {});
+      delete blobCache[old.file_path];
+    }
     await loadMessages();
   }
 
@@ -369,7 +496,7 @@
     loadMessages();
   }
 
-  // כפתור "נקה" לשיחה עם העוזר (נוצר כאן, בלי לשנות HTML)
+  // ---------- רכיבים שנוצרים מהקוד (בלי לשנות HTML) ----------
   clearBtn = document.createElement("button");
   clearBtn.className = "link hidden";
   clearBtn.textContent = "🗑 נקה";
@@ -380,3 +507,36 @@
     }
   };
   $("chat-with").parentElement.appendChild(clearBtn);
+
+  const composer = $("msg-input").parentElement;
+
+  uploadNote = document.createElement("div");
+  uploadNote.style.cssText = "color:#c0392b;font-size:13px;min-height:0;";
+  composer.parentElement.insertBefore(uploadNote, composer);
+
+  attachBtn = document.createElement("button");
+  attachBtn.textContent = "📎";
+  attachBtn.title = "צירוף קובץ או תמונה";
+  attachBtn.style.cssText =
+    "background:#e6e9f0;color:#222;padding:8px 10px;font-size:16px;border:0;border-radius:8px;cursor:pointer;";
+  composer.insertBefore(attachBtn, $("msg-input"));
+
+  fileInput = document.createElement("input");
+  fileInput.type = "file";
+  fileInput.style.display = "none";
+  document.body.appendChild(fileInput);
+  attachBtn.onclick = () => fileInput.click();
+  fileInput.onchange = (e) => { sendFile(e.target.files[0]); e.target.value = ""; };
+
+  $("btn-login").onclick = login;
+  $("btn-signup").onclick = signup;
+  $("btn-logout").onclick = logout;
+  $("btn-back").onclick = openContacts;
+  $("btn-send").onclick = sendMessage;
+  $("msg-input").onkeydown = (e) => { if (e.key === "Enter") sendMessage(); };
+  $("auth-pass").onkeydown = (e) => { if (e.key === "Enter") login(); };
+  let searchDelay;
+  $("search").oninput = () => { clearTimeout(searchDelay); searchDelay = setTimeout(searchUsers, 300); };
+
+  if (session) openContacts(); else show("view-auth");
+})();
