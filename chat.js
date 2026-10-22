@@ -261,8 +261,35 @@
     if (uploadNote) uploadNote.textContent = text || "";
   }
 
+  // כיווץ תמונות לפני העלאה (חוסך מקום בשרת)
+  async function compressImage(file) {
+    if (!file.type.startsWith("image/")) return file;
+    if (/gif|svg/.test(file.type)) return file;       // לא מכווצים GIF ו-SVG
+    if (file.size < 300 * 1024) return file;          // קטנה מספיק
+    try {
+      const bmp = await createImageBitmap(file);
+      const MAXD = 1600;
+      const scale = Math.min(1, MAXD / Math.max(bmp.width, bmp.height));
+      const w = Math.round(bmp.width * scale);
+      const h = Math.round(bmp.height * scale);
+      const canvas = document.createElement("canvas");
+      canvas.width = w;
+      canvas.height = h;
+      const ctx = canvas.getContext("2d");
+      ctx.fillStyle = "#fff";                         // רקע לבן לתמונות שקופות
+      ctx.fillRect(0, 0, w, h);
+      ctx.drawImage(bmp, 0, 0, w, h);
+      if (bmp.close) bmp.close();
+      const blob = await new Promise((res) => canvas.toBlob(res, "image/jpeg", 0.82));
+      if (!blob || blob.size >= file.size) return file;
+      return new File([blob], file.name.replace(/\.[^.]+$/, "") + ".jpg", { type: "image/jpeg" });
+    } catch (e) { return file; }
+  }
+
   async function sendFile(file) {
     if (!file || !currentChat || currentChat.id === "ai") return;
+    setNote("מעבד קובץ...");
+    file = await compressImage(file);
     if (file.size > MAX_FILE) { setNote("הקובץ גדול מדי (מקסימום 10MB)"); return; }
     setNote("מעלה קובץ...");
     const extMatch = file.name.match(/\.[A-Za-z0-9]{1,8}$/);
